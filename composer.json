@@ -1,0 +1,36 @@
+{
+    "name": "oilstone/api-contentful-integration",
+    "description": "A Contentful integration package for garethhudson07/api",
+    "type": "library",
+    "require": {
+        "contentful/contentful-management": "^4.1",
+        "contentful/contentful": "^7.1",
+        "contentful/rich-text": "^4.0",
+        "garethhudson07/aggregate": "^1.2",
+        "garethhudson07/api": "^9.5",
+        "nesbot/carbon": "^3.10"
+    },
+    "require-dev": {
+        "guzzlehttp/guzzle": "^7.9",
+        "laravel/framework": "^11.0",
+        "oilstone/api-resource-loader": "^5.3",
+        "psr/http-message": "^1.0"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Oilstone\\ApiContentfulIntegration\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Brendan Bullen",
+            "email": "66941+bullenb@users.noreply.github.com"
+        }
+    ],
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}
