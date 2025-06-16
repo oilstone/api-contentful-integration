@@ -42,5 +42,12 @@
         "allow-plugins": {
             "php-http/discovery": true
         }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Oilstone\\ApiContentfulIntegration\\Integrations\\Laravel\\Providers\\ContentfulServiceProvider"
+            ]
+        }
     }
 }
