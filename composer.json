@@ -3,7 +3,7 @@
     "description": "A Contentful integration package for garethhudson07/api",
     "type": "library",
     "require": {
-        "contentful/contentful-management": "^4.1",
+        "contentful/contentful-management": "^5.1",
         "contentful/contentful": "^7.1",
         "contentful/rich-text": "^4.0",
         "garethhudson07/aggregate": "^1.2",
@@ -26,6 +26,16 @@
         {
             "name": "Brendan Bullen",
             "email": "66941+bullenb@users.noreply.github.com"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "git@github.com:oilstone/contentful-management.php.git"
+        },
+        {
+            "type": "vcs",
+            "url": "git@github.com:oilstone/contentful.php.git"
         }
     ],
     "config": {
