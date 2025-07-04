@@ -2,20 +2,22 @@
 
 namespace Oilstone\ApiContentfulIntegration\Integrations\Laravel;
 
+use Contentful\Delivery\Client as DeliveryClient;
+use Contentful\Delivery\ClientOptions;
+use Contentful\Management\Client as ManagementClient;
+use GuzzleHttp\Client;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Delivery as ContextAwareDelivery;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Management as ContextAwareManagement;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Preview as ContextAwarePreview;
 use Oilstone\ApiContentfulIntegration\Clients\Delivery;
 use Oilstone\ApiContentfulIntegration\Clients\Management;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
-use Contentful\Delivery\Client as DeliveryClient;
-use Contentful\Delivery\ClientOptions;
-use Contentful\Management\Client as ManagementClient;
-use GuzzleHttp\Client;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
-use Symfony\Component\Cache\Adapter\NullAdapter;
+use Symfony\Component\Cache\Adapter\Psr16Adapter;
+
 
 class Factory
 {
@@ -26,7 +28,7 @@ class Factory
                 Config::get('contentful.environments.' . $context . '.delivery.token'),
                 Config::get('contentful.environments.' . $context . '.space'),
                 Config::get('contentful.environments.' . $context . '.environment'),
-                static::getClientOptions($context),
+                static::getClientOptions($context, true),
             );
         }
 
@@ -34,7 +36,7 @@ class Factory
             Config::get('contentful.delivery.token'),
             Config::get('contentful.space'),
             Config::get('contentful.environment'),
-            static::getClientOptions(),
+            static::getClientOptions(null, true),
         );
     }
 
@@ -102,13 +104,18 @@ class Factory
         return $preview ? static::makePreviewClient() : static::makeDeliveryClient();
     }
 
-    protected static function getClientOptions(?string $context = null): ClientOptions
+    protected static function getClientOptions(?string $context = null, bool $withCache = false): ClientOptions
     {
-        $options = (new ClientOptions)
-            ->withHttpClient(static::getHttpClient())
-            ->withCache(new NullAdapter, false, false)
-            ->withQueryCache(new NullAdapter, 0)
-            ->withoutMessageLogging();
+        $laravelCache = Cache::store(config('cache.default'));
+        $psr6CachePool = new Psr16Adapter($laravelCache);
+
+        $options = (new ClientOptions())->withHttpClient(static::getHttpClient());
+
+        if ($withCache) {
+            $options
+                ->withQueryCache($psr6CachePool, 300)
+                ->withCache($psr6CachePool, true, true);
+        }
 
         if ($locale = request()->get('locale') ?: ($context ? Config::get('contentful.environments.' . $context . '.defaultLocale') : Config::get('contentful.defaultLocale'))) {
             $options->withDefaultLocale($locale);
