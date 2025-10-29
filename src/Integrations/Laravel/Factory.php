@@ -111,7 +111,7 @@ class Factory
 
         $options = (new ClientOptions())->withHttpClient(static::getHttpClient());
 
-        if ($withCache) {
+        if ($withCache && !app()->runningInConsole()) {
             $options
                 ->withQueryCache($psr6CachePool, 300)
                 ->withCache($psr6CachePool, true, true);
