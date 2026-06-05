@@ -16,19 +16,19 @@ use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Preview as ContextAwa
 use Oilstone\ApiContentfulIntegration\Clients\Delivery;
 use Oilstone\ApiContentfulIntegration\Clients\Management;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\Psr16Adapter;
-
 
 class Factory
 {
-    public static function makeDeliveryClient(?string $context = null): DeliveryClient
+    public static function makeDeliveryClient(?string $context = null, bool $withCache = true): DeliveryClient
     {
         if ($context && Config::get('contentful.environments.' . $context . '.delivery.token')) {
             return new ContextAwareDelivery(
                 Config::get('contentful.environments.' . $context . '.delivery.token'),
                 Config::get('contentful.environments.' . $context . '.space'),
                 Config::get('contentful.environments.' . $context . '.environment'),
-                static::getClientOptions($context, true),
+                static::getClientOptions($context, $withCache),
             );
         }
 
@@ -36,7 +36,7 @@ class Factory
             Config::get('contentful.delivery.token'),
             Config::get('contentful.space'),
             Config::get('contentful.environment'),
-            static::getClientOptions(null, true),
+            static::getClientOptions(null, $withCache),
         );
     }
 
@@ -104,10 +104,16 @@ class Factory
         return $preview ? static::makePreviewClient() : static::makeDeliveryClient();
     }
 
-    protected static function getClientOptions(?string $context = null, bool $withCache = false): ClientOptions
+    public static function makeContentfulCachePool(): CacheItemPoolInterface
     {
         $laravelCache = Cache::store(config('cache.default'));
-        $psr6CachePool = new Psr16Adapter($laravelCache);
+
+        return new Psr16Adapter($laravelCache);
+    }
+
+    protected static function getClientOptions(?string $context = null, bool $withCache = false): ClientOptions
+    {
+        $psr6CachePool = static::makeContentfulCachePool();
 
         $options = (new ClientOptions())->withHttpClient(static::getHttpClient());
 
