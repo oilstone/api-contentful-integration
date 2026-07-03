@@ -28,6 +28,16 @@ class Transformer implements Contract
      */
     protected $richtextRenderer;
 
+    /**
+     * @var array<int, callable>
+     */
+    protected array $beforeCallbacks = [];
+
+    /**
+     * @var array<int, callable>
+     */
+    protected array $afterCallbacks = [];
+
     public function __construct(ContentfulSchema $schema)
     {
         $this->schema = $schema;
@@ -35,9 +45,35 @@ class Transformer implements Contract
         $this->richtextRenderer = new Renderer;
     }
 
+    public function before(callable $callback): static
+    {
+        $this->beforeCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    public function after(callable $callback): static
+    {
+        $this->afterCallbacks[] = $callback;
+
+        return $this;
+    }
+
     public function transform(Record $record): array
     {
-        return $this->transformSchema($this->schema, $record->getAttributes());
+        $attributes = $record->getAttributes();
+
+        foreach ($this->beforeCallbacks as $callback) {
+            $attributes = $callback($attributes, $record, $this->schema);
+        }
+
+        $transformed = $this->transformSchema($this->schema, $attributes);
+
+        foreach ($this->afterCallbacks as $callback) {
+            $transformed = $callback($transformed, $attributes, $record, $this->schema);
+        }
+
+        return $transformed;
     }
 
     public function reverse(array $attributes): array
@@ -55,6 +91,10 @@ class Transformer implements Contract
         $transformed = [];
 
         foreach ($schema->getProperties() as $property) {
+            if ($property->hasMeta('validationOnly')) {
+                continue;
+            }
+
             if ($property->getAccepts() instanceof Schema && $property->getType() !== 'collection') {
                 $transformed[$property->getName()] = $this->transformSchema($property->getAccepts(), $attributes);
 
@@ -87,6 +127,10 @@ class Transformer implements Contract
 
             $value = $currentAttributes[$path[0]] ?? null;
 
+            if ($property->hasMeta('beforeTransform') && is_callable($property->beforeTransform)) {
+                $value = ($property->beforeTransform)($value, $attributes);
+            }
+
             if ($value) {
                 switch ($property->getType()) {
                     case 'richtext':
@@ -108,6 +152,10 @@ class Transformer implements Contract
                         }, $value)));
                         break;
                 }
+            }
+
+            if ($property->hasMeta('afterTransform') && is_callable($property->afterTransform)) {
+                $value = ($property->afterTransform)($value, $attributes);
             }
 
             $transformed[$property->getName()] = $value;

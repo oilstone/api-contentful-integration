@@ -15,6 +15,16 @@ class Resource extends BaseResource
 {
     protected ?string $contentType;
 
+    /**
+     * @var array<int, callable>
+     */
+    protected array $beforeTransformCallbacks = [];
+
+    /**
+     * @var array<int, callable>
+     */
+    protected array $afterTransformCallbacks = [];
+
     public function repository(?Sentinel $sentinel = null): ?RepositoryContract
     {
         return new Repository($this->contentType, method_exists($this, 'isContextAware') && $this->isContextAware(), $sentinel);
@@ -23,6 +33,47 @@ class Resource extends BaseResource
     public function transformer(BaseSchema $schema): ?TransformerContract
     {
         return new Transformer($schema);
+    }
+
+    public function beforeTransform(callable $callback): static
+    {
+        $this->beforeTransformCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    public function afterTransform(callable $callback): static
+    {
+        $this->afterTransformCallbacks[] = $callback;
+
+        return $this;
+    }
+
+    public function makeTransformer(BaseSchema $schema): ?TransformerContract
+    {
+        if (isset($this->cached['transformer'])) {
+            return $this->cached['transformer'];
+        }
+
+        $transformer = parent::makeTransformer($schema);
+
+        if (! $transformer) {
+            return null;
+        }
+
+        foreach ($this->beforeTransformCallbacks as $callback) {
+            if (method_exists($transformer, 'before')) {
+                $transformer->before($callback);
+            }
+        }
+
+        foreach ($this->afterTransformCallbacks as $callback) {
+            if (method_exists($transformer, 'after')) {
+                $transformer->after($callback);
+            }
+        }
+
+        return $this->cached['transformer'] = $transformer;
     }
 
     protected function newSchemaObject(): BaseSchema
