@@ -17,6 +17,51 @@ return [
     'defaultLocale' => env('CONTENTFUL_DEFAULT_LOCALE', 'en-GB'),
 
     /**
+     * PSR-6 cache pool configuration
+     */
+    'cache' => [
+        /*
+         * The Laravel cache store backing the PSR-6 pools. Registered by the service provider
+         * from the driver and connection below unless the application already defines a store
+         * of this name. Leave empty to use the application default store.
+         */
+        'store' => env('CONTENTFUL_CACHE_STORE', 'contentful'),
+
+        /*
+         * Driver used when registering the store.
+         */
+        'driver' => env('CONTENTFUL_CACHE_DRIVER', 'redis'),
+
+        /*
+         * Redis connection used when registering the store.
+         */
+        'connection' => env('CONTENTFUL_CACHE_CONNECTION', 'contentful'),
+
+        /*
+         * Atomic locks are kept off the Contentful connection so they survive a full flush.
+         */
+        'lockConnection' => env('CONTENTFUL_CACHE_LOCK_CONNECTION', 'default'),
+
+        /*
+         * Lifetime of cached entries, assets and content types. Invalidation of the whole pool
+         * orphans entries rather than deleting them, so this also bounds how long superseded
+         * entries occupy the store.
+         */
+        'ttl' => (int) env('CONTENTFUL_CACHE_TTL', 86400),
+
+        /*
+         * Lifetime of cached query results.
+         */
+        'queryTtl' => (int) env('CONTENTFUL_QUERY_CACHE_TTL', 300),
+
+        /*
+         * Locales to invalidate when removing a single resource from the pool. Derived from the
+         * configured default locales when left empty.
+         */
+        'locales' => array_filter(explode(',', (string) env('CONTENTFUL_CACHE_LOCALES', ''))),
+    ],
+
+    /**
      * Delivery/Preview API specific configuration
      */
     'delivery' => [

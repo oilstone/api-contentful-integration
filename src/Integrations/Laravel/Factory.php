@@ -6,7 +6,6 @@ use Contentful\Delivery\Client as DeliveryClient;
 use Contentful\Delivery\ClientOptions;
 use Contentful\Management\Client as ManagementClient;
 use GuzzleHttp\Client;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -16,6 +15,7 @@ use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Preview as ContextAwa
 use Oilstone\ApiContentfulIntegration\Clients\Delivery;
 use Oilstone\ApiContentfulIntegration\Clients\Management;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
+use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Cache\Invalidator;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\Psr16Adapter;
 
@@ -104,23 +104,41 @@ class Factory
         return $preview ? static::makePreviewClient() : static::makeDeliveryClient();
     }
 
+    /**
+     * Resource entries are only ever written when the key is absent, so without a TTL a stale
+     * entry would survive until explicitly deleted.
+     */
     public static function makeContentfulCachePool(): CacheItemPoolInterface
     {
-        $laravelCache = Cache::store(config('cache.default'));
+        return new Psr16Adapter(
+            Invalidator::store(),
+            'contentful.r' . Invalidator::resourceVersion(),
+            (int) (Config::get('contentful.cache.ttl') ?? 86400),
+        );
+    }
 
-        return new Psr16Adapter($laravelCache);
+    public static function makeContentfulQueryCachePool(): CacheItemPoolInterface
+    {
+        return new Psr16Adapter(
+            Invalidator::store(),
+            'contentful.q' . Invalidator::queryVersion(),
+            static::getQueryCacheLifetime(),
+        );
+    }
+
+    protected static function getQueryCacheLifetime(): int
+    {
+        return (int) (Config::get('contentful.cache.queryTtl') ?? 300);
     }
 
     protected static function getClientOptions(?string $context = null, bool $withCache = false): ClientOptions
     {
-        $psr6CachePool = static::makeContentfulCachePool();
-
         $options = (new ClientOptions())->withHttpClient(static::getHttpClient());
 
         if ($withCache && !app()->runningInConsole()) {
             $options
-                ->withQueryCache($psr6CachePool, 300)
-                ->withCache($psr6CachePool, true, true);
+                ->withQueryCache(static::makeContentfulQueryCachePool(), static::getQueryCacheLifetime())
+                ->withCache(static::makeContentfulCachePool(), true, true);
         }
 
         if ($locale = request()->get('locale') ?: ($context ? Config::get('contentful.environments.' . $context . '.defaultLocale') : Config::get('contentful.defaultLocale'))) {

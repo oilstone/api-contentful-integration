@@ -2,6 +2,10 @@
 
 namespace Oilstone\ApiContentfulIntegration\Integrations\Laravel\Providers;
 
+use Contentful\Core\Api\IntegrationInterface;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\ServiceProvider;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Delivery as ContextAwareDelivery;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Management as ContextAwareManagement;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Preview as ContextAwarePreview;
@@ -10,10 +14,6 @@ use Oilstone\ApiContentfulIntegration\Clients\Management;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
 use Oilstone\ApiContentfulIntegration\Context;
 use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Factory;
-use Contentful\Core\Api\IntegrationInterface;
-use Illuminate\Foundation\Application;
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\ServiceProvider;
 
 class ContentfulServiceProvider extends ServiceProvider implements IntegrationInterface
 {
@@ -22,13 +22,35 @@ class ContentfulServiceProvider extends ServiceProvider implements IntegrationIn
      */
     public function boot(): void
     {
-        $configFile = (string) \realpath(__DIR__ . '/../config/contentful.php');
+        $configFile = (string) \realpath(__DIR__.'/../config/contentful.php');
 
         $this->publishes([
-            $configFile => $this->app->make('path.config') . '/contentful.php',
+            $configFile => $this->app->make('path.config').'/contentful.php',
         ]);
 
         $this->mergeConfigFrom($configFile, 'contentful');
+
+        $this->registerCacheStore();
+    }
+
+    /**
+     * The cache pool is an implementation detail of this package, so the store is defined here
+     * rather than requiring the application to publish and maintain a cache config. An existing
+     * store of the same name always wins.
+     */
+    protected function registerCacheStore(): void
+    {
+        $store = Config::get('contentful.cache.store');
+
+        if (! $store || Config::get('cache.stores.'.$store)) {
+            return;
+        }
+
+        Config::set('cache.stores.'.$store, array_filter([
+            'driver' => Config::get('contentful.cache.driver') ?: 'redis',
+            'connection' => Config::get('contentful.cache.connection'),
+            'lock_connection' => Config::get('contentful.cache.lockConnection'),
+        ]));
     }
 
     /**
