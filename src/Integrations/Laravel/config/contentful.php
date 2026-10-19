@@ -16,6 +16,12 @@ return [
      */
     'defaultLocale' => env('CONTENTFUL_DEFAULT_LOCALE', 'en-GB'),
 
+    /*
+     * Log Contentful API requests via the application logger. Independent of the application's
+     * own debug setting.
+     */
+    'debug' => (bool) env('CONTENTFUL_DEBUG', false),
+
     /**
      * PSR-6 cache pool configuration
      */

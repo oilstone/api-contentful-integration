@@ -69,7 +69,7 @@ class Factory
             $client = new ContextAwareManagement(
                 Config::get('contentful.environments.' . $context . '.management.token'),
                 array_filter([
-                    'logger' => (Config::get('app.debug') ?? false) ? Log::getLogger() : null,
+                    'logger' => static::isDebugEnabled() ? Log::getLogger() : null,
                     'guzzle' => static::getHttpClient(),
                 ]),
             );
@@ -79,7 +79,7 @@ class Factory
             $client = new Management(
                 Config::get('contentful.management.token'),
                 array_filter([
-                    'logger' => (Config::get('app.debug') ?? false) ? Log::getLogger() : null,
+                    'logger' => static::isDebugEnabled() ? Log::getLogger() : null,
                     'guzzle' => static::getHttpClient(),
                 ]),
             );
@@ -145,11 +145,16 @@ class Factory
             $options->withDefaultLocale($locale);
         }
 
-        if (Config::get('app.debug') ?? false) {
+        if (static::isDebugEnabled()) {
             $options->withLogger(Log::getLogger());
         }
 
         return $options;
+    }
+
+    protected static function isDebugEnabled(): bool
+    {
+        return (bool) (Config::get('contentful.debug') ?? false);
     }
 
     protected static function getHttpClient(): Client
