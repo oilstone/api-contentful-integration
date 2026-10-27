@@ -9,7 +9,7 @@ use Api\Schema\Property;
 use Api\Schema\Stitch\Property as StitchProperty;
 use Oilstone\ApiContentfulIntegration\Clients\Delivery;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
-use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Factory;
+use Oilstone\ApiContentfulIntegration\Integrations\Laravel\ClientManager;
 use Carbon\Carbon;
 use Contentful\Core\Api\DateTimeImmutable;
 use Contentful\Core\Api\Location;
@@ -232,7 +232,7 @@ class Query
             switch (true) {
                 case is_array($field) && ($field[0]['sys']['type'] ?? null) === 'ResourceLink':
                     $urns = array_map(fn ($relation) => $relation['sys']['urn'], $field);
-                    $client = Factory::makeDeliveryClientFromEntryUrn($urns[0], $this->isPreviewMode());
+                    $client = app(ClientManager::class)->forEntryUrn($urns[0], $this->isPreviewMode());
                     $entryIds = array_map(fn (string $urn) => Str::afterLast($urn, '/'), $urns);
                     $entries = $client->getEntries((new DeliveryQuery)->where('sys.id[in]', $entryIds));
 

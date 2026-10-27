@@ -2,7 +2,6 @@
 
 namespace Oilstone\ApiContentfulIntegration\Integrations\Laravel\Providers;
 
-use Contentful\Core\Api\IntegrationInterface;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
@@ -13,24 +12,83 @@ use Oilstone\ApiContentfulIntegration\Clients\Delivery;
 use Oilstone\ApiContentfulIntegration\Clients\Management;
 use Oilstone\ApiContentfulIntegration\Clients\Preview;
 use Oilstone\ApiContentfulIntegration\Context;
+use Oilstone\ApiContentfulIntegration\Integrations\Laravel\ClientManager;
 use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Factory;
 
-class ContentfulServiceProvider extends ServiceProvider implements IntegrationInterface
+class ContentfulServiceProvider extends ServiceProvider
 {
     /**
-     * Register any other events for your application.
+     * Register the service provider.
+     *
+     * Client lifetimes are owned by the scoped ClientManager, so the client bindings below are
+     * plain binds that delegate to it rather than singletons that would outlive the request.
      */
+    public function register(): void
+    {
+        $this->mergeConfigFrom($this->configPath(), 'contentful');
+
+        $this->app->scoped(ClientManager::class);
+
+        $this->app->bind(Delivery::class, function (Application $app): Delivery {
+            return Factory::shouldUsePreview()
+                ? $app->make(Preview::class)
+                : $app->make(ClientManager::class)->delivery();
+        });
+
+        $this->app->bind(Preview::class, function (Application $app): Preview {
+            return $app->make(ClientManager::class)->preview();
+        });
+
+        $this->app->bind(Management::class, function (Application $app): Management {
+            return $app->make(ClientManager::class)->management();
+        });
+
+        $this->registerContextAwareClients();
+    }
+
     public function boot(): void
     {
-        $configFile = (string) \realpath(__DIR__.'/../config/contentful.php');
-
-        $this->publishes([
-            $configFile => $this->app->make('path.config').'/contentful.php',
-        ]);
-
-        $this->mergeConfigFrom($configFile, 'contentful');
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                $this->configPath() => $this->app->configPath('contentful.php'),
+            ], 'contentful-config');
+        }
 
         $this->registerCacheStore();
+    }
+
+    protected function configPath(): string
+    {
+        return __DIR__.'/../config/contentful.php';
+    }
+
+    /**
+     * Context aware clients are opt-in. When disabled they resolve to the standard clients so
+     * resources and transformers that request them still work against the default space.
+     */
+    protected function registerContextAwareClients(): void
+    {
+        if (! Factory::isContextAware()) {
+            $this->app->alias(Delivery::class, ContextAwareDelivery::class);
+            $this->app->alias(Preview::class, ContextAwarePreview::class);
+            $this->app->alias(Management::class, ContextAwareManagement::class);
+
+            return;
+        }
+
+        $this->app->bind(ContextAwareDelivery::class, function (Application $app): Delivery {
+            return Factory::shouldUsePreview()
+                ? $app->make(ContextAwarePreview::class)
+                : $app->make(ClientManager::class)->delivery((new Context($app))->current());
+        });
+
+        $this->app->bind(ContextAwarePreview::class, function (Application $app): Preview {
+            return $app->make(ClientManager::class)->preview((new Context($app))->current());
+        });
+
+        $this->app->bind(ContextAwareManagement::class, function (Application $app): Management {
+            return $app->make(ClientManager::class)->management((new Context($app))->current());
+        });
     }
 
     /**
@@ -51,71 +109,5 @@ class ContentfulServiceProvider extends ServiceProvider implements IntegrationIn
             'connection' => Config::get('contentful.cache.connection'),
             'lock_connection' => Config::get('contentful.cache.lockConnection'),
         ]));
-    }
-
-    /**
-     * Register the service provider.
-     */
-    public function register(): void
-    {
-        $this->app->singleton(Delivery::class, function (Application $app): Delivery {
-            if (Config::get('artfund.preview') || ($this->app->request?->method() && $this->app->request->method() !== 'GET')) {
-                return $app->make(Preview::class);
-            }
-
-            $client = Factory::makeDeliveryClient();
-            $client->useIntegration($this);
-
-            return $client;
-        });
-
-        $this->app->singleton(Preview::class, function (): Preview {
-            $client = Factory::makePreviewClient();
-            $client->useIntegration($this);
-
-            return $client;
-        });
-
-        $this->app->singleton(Management::class, function (): Management {
-            $client = Factory::makeManagementClient();
-            $client->useIntegration($this);
-
-            return $client;
-        });
-
-        $this->app->bind(ContextAwareDelivery::class, function (Application $app): Delivery {
-            if (Config::get('artfund.preview') || ($this->app->request?->method() && $this->app->request->method() !== 'GET')) {
-                return $app->make(ContextAwarePreview::class);
-            }
-
-            $client = Factory::makeDeliveryClient((new Context($app))->current());
-            $client->useIntegration($this);
-
-            return $client;
-        });
-
-        $this->app->bind(ContextAwarePreview::class, function (Application $app): Preview {
-            $client = Factory::makePreviewClient((new Context($app))->current());
-            $client->useIntegration($this);
-
-            return $client;
-        });
-
-        $this->app->bind(ContextAwareManagement::class, function (Application $app): Management {
-            $client = Factory::makeManagementClient((new Context($app))->current());
-            $client->useIntegration($this);
-
-            return $client;
-        });
-    }
-
-    public function getIntegrationName(): string
-    {
-        return 'contentful.laravel'; // This name is used to determine which version of the API should be used (why wouldn't you use a config for this??)
-    }
-
-    public function getIntegrationPackageName(): string
-    {
-        return 'contentful/laravel'; // This name is used to determine which version of the API should be used (why wouldn't you use a config for this??)
     }
 }

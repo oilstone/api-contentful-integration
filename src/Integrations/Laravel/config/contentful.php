@@ -87,6 +87,11 @@ return [
      */
     'preview' => [
         /*
+         * Serve all requests from the Preview API rather than the Delivery API.
+         */
+        'enabled' => (bool) env('CONTENTFUL_PREVIEW', false),
+
+        /*
          * An API key for the above specified space.
          */
         'token' => env('CONTENTFUL_PREVIEW_TOKEN'),
@@ -102,5 +107,15 @@ return [
         'token' => env('CONTENTFUL_MANAGEMENT_TOKEN'),
     ],
 
+    /*
+     * Allow context aware resources to switch between the spaces/environments defined below.
+     * When disabled, the context aware clients resolve to the standard clients for the space
+     * and environment configured above.
+     */
+    'contextAware' => (bool) env('CONTENTFUL_CONTEXT_AWARE', false),
+
+    /*
+     * Additional spaces/environments keyed by context. Only used when contextAware is enabled.
+     */
     'environments' => [],
 ];

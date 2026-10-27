@@ -2,9 +2,8 @@
 
 namespace Oilstone\ApiContentfulIntegration\Integrations\Laravel;
 
-use Contentful\Delivery\Client as DeliveryClient;
+use Contentful\Core\Api\BaseClient;
 use Contentful\Delivery\ClientOptions;
-use Contentful\Management\Client as ManagementClient;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
@@ -21,87 +20,115 @@ use Symfony\Component\Cache\Adapter\Psr16Adapter;
 
 class Factory
 {
-    public static function makeDeliveryClient(?string $context = null, bool $withCache = true): DeliveryClient
+    public static function makeDeliveryClient(?string $context = null, bool $withCache = true): Delivery
     {
         if ($context && Config::get('contentful.environments.' . $context . '.delivery.token')) {
-            return new ContextAwareDelivery(
+            return static::withIntegration(new ContextAwareDelivery(
                 Config::get('contentful.environments.' . $context . '.delivery.token'),
                 Config::get('contentful.environments.' . $context . '.space'),
                 Config::get('contentful.environments.' . $context . '.environment'),
                 static::getClientOptions($context, $withCache),
-            );
+            ));
         }
 
-        return new Delivery(
+        return static::withIntegration(new Delivery(
             Config::get('contentful.delivery.token'),
             Config::get('contentful.space'),
             Config::get('contentful.environment'),
             static::getClientOptions(null, $withCache),
-        );
+        ));
     }
 
     public static function makePreviewClient(?string $context = null): Preview
     {
-        $clientOptions = static::getClientOptions()->withHost('https://preview.contentful.com');
-
         if ($context && Config::get('contentful.environments.' . $context . '.preview.token')) {
-            return new ContextAwarePreview(
+            return static::withIntegration(new ContextAwarePreview(
                 Config::get('contentful.environments.' . $context . '.preview.token'),
                 Config::get('contentful.environments.' . $context . '.space'),
                 Config::get('contentful.environments.' . $context . '.environment'),
-                $clientOptions,
-            );
+                static::getClientOptions($context)->withHost('https://preview.contentful.com'),
+            ));
         }
 
-        return new Preview(
+        return static::withIntegration(new Preview(
             Config::get('contentful.preview.token'),
             Config::get('contentful.space'),
             Config::get('contentful.environment'),
-            $clientOptions,
-        );
+            static::getClientOptions()->withHost('https://preview.contentful.com'),
+        ));
     }
 
-    public static function makeManagementClient(?string $context = null): ManagementClient
+    public static function makeManagementClient(?string $context = null): Management
     {
-        $client = null;
+        $options = array_filter([
+            'logger' => static::isDebugEnabled() ? Log::getLogger() : null,
+            'guzzle' => static::getHttpClient(),
+        ]);
 
         if ($context && Config::get('contentful.environments.' . $context . '.management.token')) {
-            $client = new ContextAwareManagement(
-                Config::get('contentful.environments.' . $context . '.management.token'),
-                array_filter([
-                    'logger' => static::isDebugEnabled() ? Log::getLogger() : null,
-                    'guzzle' => static::getHttpClient(),
-                ]),
-            );
+            $prefix = 'contentful.environments.' . $context;
+            $client = new ContextAwareManagement(Config::get($prefix . '.management.token'), $options);
+        } else {
+            $prefix = 'contentful';
+            $client = new Management(Config::get($prefix . '.management.token'), $options);
         }
 
-        if (! $client) {
-            $client = new Management(
-                Config::get('contentful.management.token'),
-                array_filter([
-                    'logger' => static::isDebugEnabled() ? Log::getLogger() : null,
-                    'guzzle' => static::getHttpClient(),
-                ]),
-            );
-        }
+        $client->setSpaceId(Config::get($prefix . '.space'));
+        $client->setEnvironment(Config::get($prefix . '.environment'));
 
-        $client->setSpaceId(Config::get('contentful.space'));
-        $client->setEnvironment(Config::get('contentful.environment'));
-
-        return $client;
+        return static::withIntegration($client);
     }
 
     public static function makeDeliveryClientFromEntryUrn(string $urn, bool $preview = false): Delivery
     {
+        $context = static::contextForEntryUrn($urn);
+
+        return $preview ? static::makePreviewClient($context) : static::makeDeliveryClient($context);
+    }
+
+    /**
+     * The configured context whose space matches the entry URN, or null for the default space.
+     */
+    public static function contextForEntryUrn(string $urn): ?string
+    {
+        if (! static::isContextAware()) {
+            return null;
+        }
+
         $spaceId = Str::before(Str::after($urn, 'spaces/'), '/');
 
-        foreach (Config::get('contentful.environments') as $context => $environment) {
-            if ($environment['space'] === $spaceId) {
-                return $preview ? static::makePreviewClient($context) : static::makeDeliveryClient($context);
+        foreach ((array) Config::get('contentful.environments') as $context => $environment) {
+            if (($environment['space'] ?? null) === $spaceId) {
+                return (string) $context;
             }
         }
 
-        return $preview ? static::makePreviewClient() : static::makeDeliveryClient();
+        return null;
+    }
+
+    /**
+     * Content is read from the Preview API when forced by config, or for any non-GET request.
+     */
+    public static function shouldUsePreview(): bool
+    {
+        if (Config::get('contentful.preview.enabled')) {
+            return true;
+        }
+
+        return app()->bound('request') && app('request')->method() !== 'GET';
+    }
+
+    /**
+     * @template T of BaseClient
+     *
+     * @param  T  $client
+     * @return T
+     */
+    protected static function withIntegration(BaseClient $client): BaseClient
+    {
+        $client->useIntegration(new Integration);
+
+        return $client;
     }
 
     /**
@@ -150,6 +177,11 @@ class Factory
         }
 
         return $options;
+    }
+
+    public static function isContextAware(): bool
+    {
+        return (bool) (Config::get('contentful.contextAware') ?? false);
     }
 
     protected static function isDebugEnabled(): bool
