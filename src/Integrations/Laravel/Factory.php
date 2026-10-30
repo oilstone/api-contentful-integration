@@ -8,6 +8,7 @@ use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Delivery as ContextAwareDelivery;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Management as ContextAwareManagement;
 use Oilstone\ApiContentfulIntegration\Clients\ContextAware\Preview as ContextAwarePreview;
@@ -20,41 +21,33 @@ use Symfony\Component\Cache\Adapter\Psr16Adapter;
 
 class Factory
 {
+    public const APIS = ['delivery', 'preview', 'management'];
+
     public static function makeDeliveryClient(?string $context = null, bool $withCache = true): Delivery
     {
-        if ($context && Config::get('contentful.environments.' . $context . '.delivery.token')) {
-            return static::withIntegration(new ContextAwareDelivery(
-                Config::get('contentful.environments.' . $context . '.delivery.token'),
-                Config::get('contentful.environments.' . $context . '.space'),
-                Config::get('contentful.environments.' . $context . '.environment'),
-                static::getClientOptions($context, $withCache),
-            ));
-        }
+        $context = static::resolveContext('delivery', $context);
+        $credentials = static::credentials('delivery', $context);
+        $class = $context ? ContextAwareDelivery::class : Delivery::class;
 
-        return static::withIntegration(new Delivery(
-            Config::get('contentful.delivery.token'),
-            Config::get('contentful.space'),
-            Config::get('contentful.environment'),
-            static::getClientOptions(null, $withCache),
+        return static::withIntegration(new $class(
+            $credentials['token'],
+            $credentials['space'],
+            $credentials['environment'],
+            static::getClientOptions($context, $withCache),
         ));
     }
 
     public static function makePreviewClient(?string $context = null): Preview
     {
-        if ($context && Config::get('contentful.environments.' . $context . '.preview.token')) {
-            return static::withIntegration(new ContextAwarePreview(
-                Config::get('contentful.environments.' . $context . '.preview.token'),
-                Config::get('contentful.environments.' . $context . '.space'),
-                Config::get('contentful.environments.' . $context . '.environment'),
-                static::getClientOptions($context)->withHost('https://preview.contentful.com'),
-            ));
-        }
+        $context = static::resolveContext('preview', $context);
+        $credentials = static::credentials('preview', $context);
+        $class = $context ? ContextAwarePreview::class : Preview::class;
 
-        return static::withIntegration(new Preview(
-            Config::get('contentful.preview.token'),
-            Config::get('contentful.space'),
-            Config::get('contentful.environment'),
-            static::getClientOptions()->withHost('https://preview.contentful.com'),
+        return static::withIntegration(new $class(
+            $credentials['token'],
+            $credentials['space'],
+            $credentials['environment'],
+            static::getClientOptions($context)->withHost('https://preview.contentful.com'),
         ));
     }
 
@@ -65,18 +58,46 @@ class Factory
             'guzzle' => static::getHttpClient(),
         ]);
 
-        if ($context && Config::get('contentful.environments.' . $context . '.management.token')) {
-            $prefix = 'contentful.environments.' . $context;
-            $client = new ContextAwareManagement(Config::get($prefix . '.management.token'), $options);
-        } else {
-            $prefix = 'contentful';
-            $client = new Management(Config::get($prefix . '.management.token'), $options);
-        }
+        $context = static::resolveContext('management', $context);
+        $credentials = static::credentials('management', $context);
+        $class = $context ? ContextAwareManagement::class : Management::class;
 
-        $client->setSpaceId(Config::get($prefix . '.space'));
-        $client->setEnvironment(Config::get($prefix . '.environment'));
+        $client = new $class($credentials['token'], $options);
+        $client->setSpaceId($credentials['space']);
+        $client->setEnvironment($credentials['environment']);
 
         return static::withIntegration($client);
+    }
+
+    /**
+     * The token, space and environment to use for an API. A context's settings are only used
+     * when that context has a token for the API, otherwise the default space's are.
+     *
+     * @param  value-of<self::APIS>  $api
+     * @return array{token: ?string, space: ?string, environment: ?string}
+     */
+    public static function credentials(string $api, ?string $context = null): array
+    {
+        $context = static::resolveContext($api, $context);
+        $prefix = $context ? 'contentful.environments.' . $context : 'contentful';
+
+        return [
+            'token' => Config::get($prefix . '.' . $api . '.token'),
+            'space' => Config::get($prefix . '.space'),
+            'environment' => Config::get($prefix . '.environment'),
+        ];
+    }
+
+    /**
+     * The context when it has a token for the API, or null to fall back to the default space.
+     */
+    protected static function resolveContext(string $api, ?string $context): ?string
+    {
+        if (! in_array($api, static::APIS, true)) {
+            throw new InvalidArgumentException('Unknown Contentful API "' . $api . '"');
+        }
+
+        return $context && Config::get('contentful.environments.' . $context . '.' . $api . '.token') ? $context : null;
     }
 
     public static function makeDeliveryClientFromEntryUrn(string $urn, bool $preview = false): Delivery
