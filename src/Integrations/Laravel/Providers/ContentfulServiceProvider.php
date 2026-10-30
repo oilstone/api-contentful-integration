@@ -14,6 +14,8 @@ use Oilstone\ApiContentfulIntegration\Clients\Preview;
 use Oilstone\ApiContentfulIntegration\Context;
 use Oilstone\ApiContentfulIntegration\Integrations\Laravel\ClientManager;
 use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Factory;
+use Oilstone\ApiContentfulIntegration\Integrations\Laravel\Integrations\SystemStatus\ContentfulMonitor;
+use Oilstone\SystemStatus\SystemStatus;
 
 class ContentfulServiceProvider extends ServiceProvider
 {
@@ -44,6 +46,7 @@ class ContentfulServiceProvider extends ServiceProvider
         });
 
         $this->registerContextAwareClients();
+        $this->registerSystemStatusMonitor();
     }
 
     public function boot(): void
@@ -88,6 +91,21 @@ class ContentfulServiceProvider extends ServiceProvider
 
         $this->app->bind(ContextAwareManagement::class, function (Application $app): Management {
             return $app->make(ClientManager::class)->management((new Context($app))->current());
+        });
+    }
+
+    /**
+     * oilstone/system-status is optional. Extending the shared instance makes the monitor
+     * available to the status checks and to watches alike.
+     */
+    protected function registerSystemStatusMonitor(): void
+    {
+        if (! class_exists(SystemStatus::class)) {
+            return;
+        }
+
+        $this->callAfterResolving(SystemStatus::class, function (SystemStatus $status): void {
+            $status->extend('contentful', ContentfulMonitor::class);
         });
     }
 
